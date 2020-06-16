@@ -1,0 +1,176 @@
+---
+# Root Playbook
+
+# Check if python2 is installed
+# If not install it
+# Dedicated to ubuntu > or = to 16.04
+- hosts: all
+  gather_facts: False
+  become: true
+  become_user: root
+  pre_tasks:
+    - name: Test if debian
+      raw: if [ -f /etc/debian_version ]; then echo "debian"; else echo "no"; fi
+      register: debian_found
+    # - debug:
+    #    msg: "{{ debian_found.stdout_lines}}"
+    - name: Install python for Ansible
+      raw: test -e /usr/bin/python || (apt -y update && apt install -y python-minimal)
+      register: python_minimal
+      changed_when: python_minimal.stdout != ""
+      when:
+        - debian_found.stdout_lines[1] is defined
+        - "'debian' in debian_found.stdout_lines[1]"
+    - name: Install python-apt for Ansible
+      raw: test -d /usr/lib/python2.7/dist-packages/apt || (apt-get update && apt-get install -y python-apt)
+      register: python_apt
+      changed_when: python_apt.stdout != ""
+      when:
+        - debian_found.stdout_lines[1] is defined
+        - "'debian' in debian_found.stdout_lines[1]"
+
+# Get facts with user connection _user id_ (ubuntu vs admin)
+- hosts: all
+  gather_facts: true
+  pre_tasks:
+    - setup: # aka gather_facts
+    - service_facts: # populate service facts
+
+- hosts: all
+  tasks:
+    - name: Set a little Timeout for apt
+      become: true
+      become_user: root
+      copy:
+        dest: "/etc/apt/apt.conf.d/99timeout"
+        content: |
+          Acquire::http::Timeout "2";
+          Acquire::ftp::Timeout "2";
+      when: 
+        - ansible_os_family == "Debian"
+
+    - name: Update apt cache
+      become: true
+      become_user: root
+      apt:
+       # cache_valid_time: 172800 # 48h / 2 days
+       cache_valid_time: 600 # 5 min
+      when: 
+      - ansible_os_family == "Debian"
+     
+    - name: Install Locales  dependencies
+      become: true
+      become_user: root
+      apt:
+       state: latest
+       name: "{{ packages }}"
+      vars:
+        packages:
+        - locales
+      when: 
+        - ansible_os_family == "Debian"
+     
+     # "locale_gen" module fails on CentOS 6 and CentOS 7
+    - name: Generate Locales
+      become: true
+      become_user: root
+      locale_gen:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - en_US.UTF-8
+        - fr_FR.UTF-8
+      when: 
+        - ansible_os_family == "Debian"
+     
+    - name: '[apt] Install common packages for all servers'
+      become: true
+      become_user: root
+      apt:
+        state: latest
+        name: "{{ packages }}"
+      vars:
+        packages:
+        - python-apt
+        - python-pip
+        - python-dnspython
+        - python3
+        - python3-venv
+        - python3-pip
+        - git
+        - curl
+        - htop
+        - ncdu
+        - pwgen
+        - strace
+        - sudo
+        - tar
+        - zip
+        - unzip
+        - vim
+        - wget
+        - whois
+        - screen
+        - apt
+        - apt-utils
+        - openssh-client
+        - openssh-server
+        - openssh-sftp-server
+        - apt-transport-https
+        - psmisc
+        - tree
+        - locales
+        - jq
+      when: 
+        - ansible_os_family == "Debian"
+     
+    - name: '[apt] Remove Forbidden Package'
+      become: true
+      become_user: root
+      apt:
+        name: "{{ packages }}"
+        state: absent
+        purge: yes
+      vars:
+        packages:
+        - nano
+        - vim-tiny
+        - zabbix-*
+      when: 
+        - ansible_os_family == "Debian"
+     
+    - name: '[apt] Clean & Autoremove'
+      become: true
+      become_user: root
+      no_log: true
+      apt:
+        autoremove: yes
+        purge: yes
+      when:
+        - ansible_os_family == "Debian"
+     
+    - name: Ubuntu - ensure awscli apt package not installed
+      become: true
+      become_user: root
+      apt:
+        name: "{{ packages }}"
+        state: absent
+      vars:
+        packages:
+        - awscli
+        - python-boto
+        - python-boto3
+        - python-botocore
+        - python3-botocore
+      when:
+        - ansible_os_family == "Debian"
+
+    - name: Add MOTD
+      become: true
+      become_user: root
+      copy:
+        dest: "/etc/motd"
+        content: |
+          ## Ansible Managed
+      when:
+       - ansible_os_family == "Debian"
